@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ヘックス接続ボードゲーム</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex flex-col items-center p-4">
+<h1 class="text-2xl font-bold mb-1 text-center">⬡ ヘックス接続ゲーム</h1>
+<p class="text-gray-400 text-sm mb-2 text-center">先手(赤)=左右接続 / 後手(青)=上下接続 — ※先手必勝ゲーム</p>
+<div class="flex gap-4 mb-2">
+  <span class="text-red-400 text-sm font-bold">🔴 赤（あなた）: 左→右</span>
+  <span class="text-blue-400 text-sm font-bold">🔵 青（AI）: 上→下</span>
+</div>
+<canvas id="c" class="rounded-xl mb-3" style="max-width:100%;cursor:pointer"></canvas>
+<div id="msg" class="text-center text-sm font-bold min-h-5 mb-3"></div>
+<div class="flex gap-3">
+  <button id="newGame" class="bg-indigo-600 hover:bg-indigo-500 px-5 py-2 rounded font-bold transition">新しいゲーム</button>
+  <label class="text-sm text-gray-300 flex items-center gap-2">
+    盤面サイズ
+    <select id="size" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm">
+      <option value="7">7×7</option>
+      <option value="9" selected>9×9</option>
+      <option value="11">11×11</option>
+    </select>
+  </label>
+</div>
+<script>
+const cv=document.getElementById('c');
+const ctx=cv.getContext('2d');
+let N,cells,turn,gameOver;
+const R=24;
+
+function getN(){ return parseInt(document.getElementById('size').value); }
+
+function init(){
+  N=getN();
+  cells=new Int8Array(N*N);
+  turn=1; gameOver=false;
+  const W=cv.width=Math.min(window.innerWidth-32, R*2*N+R*N+R*2);
+  cv.height=Math.round(R*1.73*N+R*2);
+  draw();
+  setMsg('赤の番: クリックして石を置く');
+}
+
+function hex2xy(col,row){
+  const x=R+col*(R*2)+row*(R)+R*0.5;
+  const y=R+row*(R*1.73);
+  return [x,y];
+}
+
+function drawHex(x,y,color,border=false){
+  ctx.beginPath();
+  for(let i=0;i<6;i++){
+    const a=Math.PI/180*(60*i-30);
+    if(i===0) ctx.moveTo(x+R*Math.cos(a),y+R*Math.sin(a));
+    else ctx.lineTo(x+R*Math.cos(a),y+R*Math.sin(a));
+  }
+  ctx.closePath();
+  ctx.fillStyle=color;
+  ctx.fill();
+  if(border){
+    ctx.strokeStyle='rgba(255,255,255,0.3)';
+    ctx.lineWidth=1;
+    ctx.stroke();
+  }
+}
+
+function draw(){
+  ctx.fillStyle='#1a1a2e';
+  ctx.fillRect(0,0,cv.width,cv.height);
+  for(let r=0;r<N;r++){
+    for(let c=0;c<N;c++){
+      const [x,y]=hex2xy(c,r);
+      const v=cells[r*N+c];
+      let col='#2d3748';
+      if(v===1) col='#e53e3e';
+      else if(v===2) col='#3182ce';
+      else if((r===0||r===N-1)) col='#1a3a5c';
+      else if((c===0||c===N-1)) col='#3c1a1a';
+      drawHex(x,y,col,true);
+    }
+  }
+  // Border labels
+  ctx.fillStyle='#e53e3e';
+  ctx.font='bold 11px sans-serif';
+  ctx.textAlign='center';
+  const [x0,y0]=hex2xy(-0.5,N/2-0.5);
+  const [x1,y1]=hex2xy(N-0.5,N/2-0.5);
+  ctx.fillText('←',x0+R,y0);
+  ctx.fillText('→',x1+R,y1);
+  ctx.fillStyle='#3182ce';
+  const [bx0,by0]=hex2xy(N/2-0.5,-0.5);
+  const [bx1,by1]=hex2xy(N/2-0.5,N-0.5);
+  ctx.fillText('↑',bx0,by0+R);
+  ctx.fillText('↓',bx1,by1+R);
+}
+
+function setMsg(m,c='text-white'){
+  const el=document.getElementById('msg');
+  el.textContent=m;
+  el.className=`text-center text-sm font-bold min-h-5 mb-3 ${c}`;
+}
+
+function bfs(start,target,player){
+  const visited=new Set();
+  const q=[...start];
+  visited.add(...start.map(String));
+  while(q.length){
+    const idx=q.shift();
+    if(target.includes(idx)) return true;
+    const r=(idx/N)|0, c=idx%N;
+    for(let [dr,dc] of [[-1,0],[1,0],[0,-1],[0,1],[-1,1],[1,-1]]){
+      const nr=r+dr, nc=c+dc;
+      if(nr<0||nr>=N||nc<0||nc>=N) continue;
+      const ni=nr*N+nc;
+      if(cells[ni]===player && !visited.has(String(ni))){
+        visited.add(String(ni));
+        q.push(ni);
+      }
+    }
+  }
+  return false;
+}
+
+function checkWin(player){
+  if(player===1){
+    const left=[],right=[];
+    for(let r=0;r<N;r++){
+      if(cells[r*N+0]===1) left.push(r*N+0);
+      if(cells[r*N+N-1]===1) right.push(r*N+N-1);
+    }
+    return bfs(left,right,1);
+  } else {
+    const top=[],bot=[];
+    for(let c=0;c<N;c++){
+      if(cells[0*N+c]===2) top.push(c);
+      if(cells[(N-1)*N+c]===2) bot.push((N-1)*N+c);
+    }
+    return bfs(top,bot,2);
+  }
+}
+
+function aiMove(){
+  const empty=[];
+  for(let i=0;i<N*N;i++) if(!cells[i]) empty.push(i);
+  if(empty.length===0) return;
+  // Simple heuristic: try center, then random
+  let best=empty[Math.floor(Math.random()*empty.length)];
+  for(let i of empty){
+    const r=(i/N)|0,c=i%N;
+    if(Math.abs(r-N/2)<3 && Math.abs(c-N/2)<3){ best=i; break; }
+  }
+  cells[best]=2;
+  draw();
+  if(checkWin(2)){
+    setMsg('青（AI）の勝ち！','text-blue-400');
+    gameOver=true;
+    return;
+  }
+  turn=1;
+  setMsg('赤の番: クリックして石を置く');
+}
+
+cv.addEventListener('click',e=>{
+  if(gameOver||turn!==1) return;
+  const rect=cv.getBoundingClientRect();
+  const mx=(e.clientX-rect.left)*cv.width/rect.width;
+  const my=(e.clientY-rect.top)*cv.height/rect.height;
+  let best=-1,bestD=Infinity;
+  for(let r=0;r<N;r++){
+    for(let c=0;c<N;c++){
+      const [x,y]=hex2xy(c,r);
+      const d=Math.hypot(mx-x,my-y);
+      if(d<bestD){bestD=d;best=r*N+c;}
+    }
+  }
+  if(bestD>R*1.1||cells[best]) return;
+  cells[best]=1;
+  draw();
+  if(checkWin(1)){
+    setMsg('赤（あなた）の勝ち！🎉','text-red-400');
+    gameOver=true; return;
+  }
+  turn=2;
+  setMsg('青（AI）が考えています...','text-blue-400');
+  setTimeout(aiMove,400);
+});
+
+document.getElementById('newGame').addEventListener('click',init);
+document.getElementById('size').addEventListener('change',init);
+init();
+</script>
+</body>
+</html>
